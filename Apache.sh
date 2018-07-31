@@ -265,4 +265,48 @@
 			Allow from 127.0.0.1
 		</Directory>
 	</VirtualHost>
+	使用<Directory>来指定要限制访问的目录，order定义控制顺序，哪个在前面就先匹配哪个规则。在本例中deny在前面，所以先匹配Deny from all，这样所有的来源IP都会被限制，然后匹配Allow from 127.0.0.1，这样有允许了127.0.0.1这个IP。最终的效果是，只允许来源IP为127.0.0.1的访问。
+	也可以单独针对某个文件来做限制：
+	<Directory /data/wwwroot/123.com>
+		<FilesMatch "admin.php(.*)">
+			Order deny,allow
+			Deny from all
+			Allow from 127.0.0.1
+		</FilesMatch>
+	</Directory>
+	我们需要把能上传文件的目录直接禁止解析PHP代码，配置如下：
+	<VirtualHost *:80>
+		DocumentRoot "/data/wwwroot/www.123.com"
+		ServerName www.123.com
+		ServerAlias 123.com
+		CustomLog "|/usr/local/apache2.4/bin/rotatelogs -l logs/123.com-access_%Y%m%d.log 86400" combined
+		<Directory /data/wwwroot/www.123.com/upload>
+			php_admin_flag engine off
+		</Directory>
+	</VirtualHost>
+	验证过程如下：
+	#	/usr/local/apache2.4/bin/apachectl -t
+	#	/usr/local/apache2.4/bin/apachectl graceful
+	#	cp /usr/local/apache2.4/htdocs/1.php /data/wwwroot/www.123.com/upload/
+	#	curl -x127.0.0.1:80 www.123.com/upload/1.php
+	<?php	
+		echo "php解析"
+	?>
+	这说明1.php是不能正常解析的。使用user_agent来限制一些访问，恶意请求的user_agent相同或者相似。下面是针对user_agent来做访问控制：
+	# 	vim /usr/local/apache2.4/conf/extra/httpd-vhosts
+	<VirtualHost *:80>
+		DocumentRoot "/data/wwwroot/www.123.com"
+		ServerName www.123.com
+		ServerAlias 123.com
+		CustomLog "|/usr/local/apache2.4/bin/rotatelogs -l logs/123.com-access_%Y%m%d.log 86400" combined
+		<IfModule mod_rewrite.c>
+			RewriteEngine on
+			RewriteCond %{HTTP_USER_AGENT} .*curl.* [NC,OR]
+			RewriteCond %{HTTP_USER_AGENT} .*BAIDU.COM.* [NC]
+			RewriteRule .* - [F]
+		</IfModule>
+	</VirtualHost>
+	这个需求也用到了rewrite模块,%{HTTP_USER_AGENT}为user_agent的内置变量，在本例中当user_agent匹配curl或者baidu.com时，都会触发下面的规则。方括号中的OR表示“或者“，NC表示”不区分大小写“，F相当于Forbdden.
+	curl的-A选项指定user_agent。
+	
 	
